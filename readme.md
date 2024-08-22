@@ -17,10 +17,5 @@ pin connection is based on GPIO of H616
 ## Activating UART
 
 Since I am using an ESP32  for analog data of the MQ3 (probably overkill) but I lack a ADC to i2C converter at the moment. When I get it I will replace it 
-the orange pi needs to have UART enabled. We do this by changing the contents of boot/orangepiEnv.txt to have the overlays like below. 
-Note: Don't edit your current overlay_prefix
-
-```
-overlay_prefix=sun8i-h3
-overlays=usbhost2 usbhost3 uart1 uart2
-```
+Part 18 of this tutorial helps in testing UART and activating it 
+[https://orangepi.net/wp-content/uploads/2023/12/OrangePi_Zero3_H618_user-manual_v1.1.pdf](https://orangepi.net/wp-content/uploads/2023/12/OrangePi_Zero3_H618_user-manual_v1.1.pdf)
