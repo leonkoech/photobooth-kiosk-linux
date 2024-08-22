@@ -20,5 +20,7 @@ Since I am using an ESP32  for analog data of the MQ3 (probably overkill) but I 
 the orange pi needs to have UART enabled. We do this by changing the contents of boot/orangepiEnv.txt to have the overlays like below. 
 Note: Don't edit your current overlay_prefix
 
+```
 overlay_prefix=sun8i-h3
 overlays=usbhost2 usbhost3 uart1 uart2
+```
