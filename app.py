@@ -1,18 +1,22 @@
 from flask import Flask, render_template_string
 import OPi.GPIO as GPIO
+import threading
 import time
 
 app = Flask(__name__)
 
-# Setup the GPIO pins
-MQ3_PIN = 7  # PC9 mapped to GPIO73
-TRIG_PIN = 15  # PC8 mapped to GPIO72
-ECHO_PIN =  22 # PC7 mapped to GPIO71
 
-GPIO.setmode(GPIO.BCM)  # Using BCM numbering which matches the GPIO numbers
+# Setup the GPIO pins
+MQ3_PIN = 11 
+drunk_value = 0
+
+GPIO.setboard(GPIO.PCPCPLUS) 
+GPIO.setboard(GPIO.H616)   # Orange Pi PC board
+GPIO.setmode(GPIO.BOARD)  
+
+
+# Set MQ3 pin should make sure it's analog
 GPIO.setup(MQ3_PIN, GPIO.IN)
-# GPIO.setup(TRIG_PIN, GPIO.OUT)
-# GPIO.setup(ECHO_PIN, GPIO.IN)
 
 # Define thresholds for Sober and Drunk
 SOBER_THRESHOLD = 120  # Adjust as needed
@@ -31,35 +35,33 @@ def get_status(sensor_value):
         return "Drinking but within legal limits"
     else:
         return "DRUNK"
+sensor_value = None
+status = None
+countdown = 2
+time_left = None
 
-# Function to measure distance using ultrasonic sensor
-# def measure_distance():
- #    GPIO.output(TRIG_PIN, True)
-   #  time.sleep(0.00001)
-    # GPIO.output(TRIG_PIN, False)
+def read_mq3_sensor_continuously():
+    countdown_timer()
+    global sensor_value, status
+    while True:
+        sensor_value = read_mq3_sensor()
+        status = get_status(sensor_value)
+        time.sleep(1)  # Adjust the sleep time as needed
 
-   #  start_time = time.time()
-    # stop_time = time.time()
+def countdown_timer():
+    total_seconds = countdown * 60
+    while total_seconds:
+        minutes, seconds = divmod(total_seconds, 60)
+        print(f'{minutes:02d}:{seconds:02d}', end='\r')
+        time.sleep(1)
+        total_seconds -= 1
+        time_left = total_seconds
+    time_left = 0
 
-    # while GPIO.input(ECHO_PIN) == 0:
-   #      start_time = time.time()
-    
-   #  while GPIO.input(ECHO_PIN) == 1:
-     #    stop_time = time.time()
-
-    # elapsed_time = stop_time - start_time
-    # distance = (elapsed_time * 34300) / 2
-    # return distance
 
 @app.route('/')
 def index():
-    # distance = measure_distance()
-    sensor_value = None
-    # status = None
-    # if distance <= 10:
-      #   sensor_value = read_mq3_sensor()
-    status = get_status(sensor_value)
-    
+
     html = '''
     <!doctype html>
     <html lang="en">
@@ -70,22 +72,28 @@ def index():
       </head>
       <body>
         <div class="container">
+        {% if time_left > 0 || time_left == None%}
+          <h1>To Start, you'd have to wait for 2 minutes, at first</h1>
+          <p> {{time_left}} </p>
+          {% else %}
           <h1 class="mt-5">Sensor Values</h1>
-          <p class="lead">Current distance: {{ distance }} cm</p>
           {% if sensor_value is not none %}
           <p class="lead">MQ-3 Sensor Value: {{ sensor_value }}</p>
           <p class="lead">Status: {{ status }}</p>
           {% else %}
           <p class="lead">Move closer to see MQ-3 sensor values.</p>
           {% endif %}
+        {% endif %}
+
         </div>
       </body>
     </html>
     '''
-    return render_template_string(html, distance=distance, sensor_value=sensor_value, status=status)
+    return render_template_string(html, sensor_value=sensor_value, status=status)
 
 if __name__ == '__main__':
     try:
+        threading.Thread(target=read_mq3_sensor_continuously, daemon=True).start()
         app.run(host='0.0.0.0', port=5000, debug=True)
     except KeyboardInterrupt:
         GPIO.cleanup()
