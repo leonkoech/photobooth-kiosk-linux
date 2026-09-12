@@ -8,9 +8,12 @@
       html, body {
         margin: 0;
         height: 100%;
-        background: #000;
+        width: 100%;
+        background: #0a0a0a;
         overflow: hidden;
+        font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
       }
+
       .stage {
         height: 100vh;
         width: 100vw;
@@ -18,16 +21,112 @@
         align-items: center;
         justify-content: center;
       }
-      .stage img {
-        max-height: 100%;
-        max-width: 100%;
-        object-fit: contain;
+
+      .polaroid {
+        background: #fdfdfb;
+        padding: 4vw 4vw 8vw 4vw;
+        border-radius: 4px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 88vw;
+        max-width: 720px;
+      }
+
+      .photo-window {
+        width: 100%;
+        aspect-ratio: 4 / 5;
+        background: #000;
+        overflow: hidden;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .photo-window img.live {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .flash.fire {
+        animation: flash-anim 0.4s ease-out;
+      }
+      @keyframes flash-anim {
+        0% { opacity: 0.95; }
+        100% { opacity: 0; }
+      }
+
+      .caption {
+        margin-top: 6vw;
+        font-family: "Segoe Script", "Brush Script MT", cursive;
+        font-size: 6vw;
+        color: #333;
+      }
+
+      .shutter-btn {
+        position: fixed;
+        bottom: 6vh;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 22vw;
+        max-width: 110px;
+        height: 22vw;
+        max-height: 110px;
+        border-radius: 50%;
+        background: #fff;
+        border: 6px solid #222;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        cursor: pointer;
+      }
+      .shutter-btn:active {
+        transform: translateX(-50%) scale(0.92);
+      }
+      .shutter-btn:disabled {
+        opacity: 0.5;
       }
     </style>
   </head>
   <body>
     <div class="stage">
-      <img src="{{ url_for('stream') }}" alt="camera preview">
+      <div class="polaroid">
+        <div class="photo-window">
+          <img class="live" id="live-feed" src="{{ url_for('stream') }}" alt="camera preview">
+          <div class="flash" id="flash"></div>
+        </div>
+        <div class="caption">Universe Booth</div>
+      </div>
     </div>
+
+    <button class="shutter-btn" id="shutter" aria-label="Take photo"></button>
+
+    <script>
+      const shutter = document.getElementById('shutter');
+      const flash = document.getElementById('flash');
+
+      shutter.addEventListener('click', async () => {
+        shutter.disabled = true;
+        flash.classList.remove('fire');
+        void flash.offsetWidth; // restart animation
+        flash.classList.add('fire');
+
+        try {
+          await fetch('/capture', { method: 'POST' });
+        } catch (e) {
+          console.error('capture failed', e);
+        }
+
+        setTimeout(() => { shutter.disabled = false; }, 1200);
+      });
+    </script>
   </body>
 </html>

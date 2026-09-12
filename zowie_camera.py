@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 import time
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import Iterator, List, Optional
 
 
 @dataclass
@@ -22,6 +23,11 @@ class ZowieCamera:
     ip: str
     port: int = 554
     path: str = "/main/av"          # Zowietek's default RTSP main-stream path
+    stream_width: int = 480
+    stream_fps: int = 15
+
+    _proc: Optional[subprocess.Popen] = field(default=None, init=False, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     @property
     def rtsp_url(self) -> str:
@@ -30,7 +36,12 @@ class ZowieCamera:
     def snapshot(self, out_path: str, *, full_res: bool = True, timeout: int = 12) -> bool:
         """Grab ONE JPEG frame. full_res=False scales to 640px wide (fast preview,
         matches the AGX dashboard's use of this same call). Returns True iff a
-        non-empty file landed at out_path — never raises."""
+        non-empty file landed at out_path — never raises.
+
+        NOTE: this opens a fresh RTSP connection every call (~1-2s of handshake
+        overhead) — fine for an occasional still, too slow for a live view. Use
+        mjpeg_frames() for continuous streaming.
+        """
         vf = [] if full_res else ["-vf", "scale=640:-2"]
         cmd = [
             "ffmpeg", "-nostdin", "-y", "-rtsp_transport", "tcp",
@@ -65,6 +76,61 @@ class ZowieCamera:
             if i < count - 1:
                 time.sleep(interval)
         return paths
+
+    # -- continuous streaming --------------------------------------------
+
+    def _spawn_stream_proc(self) -> subprocess.Popen:
+        cmd = [
+            "ffmpeg", "-nostdin", "-loglevel", "error",
+            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-rtsp_transport", "tcp", "-i", self.rtsp_url,
+            "-an", "-r", str(self.stream_fps),
+            "-vf", f"scale={self.stream_width}:-2",
+            "-q:v", "5", "-f", "mjpeg", "-",
+        ]
+        return subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, bufsize=0,
+        )
+
+    def mjpeg_frames(self) -> Iterator[bytes]:
+        """Yield raw JPEG frame bytes forever from ONE persistent RTSP
+        connection — no per-frame reconnect, so this is the low-latency path
+        for a live view. Transparently restarts ffmpeg if it dies/stalls."""
+        buf = b""
+        while True:
+            with self._lock:
+                if self._proc is None or self._proc.poll() is not None:
+                    self._proc = self._spawn_stream_proc()
+            proc = self._proc
+            chunk = proc.stdout.read(4096)
+            if not chunk:
+                # stream died — drop it and reconnect after a short backoff
+                with self._lock:
+                    self._proc = None
+                buf = b""
+                time.sleep(0.5)
+                continue
+            buf += chunk
+            while True:
+                start = buf.find(b"\xff\xd8")
+                if start == -1:
+                    buf = b""
+                    break
+                end = buf.find(b"\xff\xd9", start + 2)
+                if end == -1:
+                    if start > 0:
+                        buf = buf[start:]
+                    break
+                frame = buf[start:end + 2]
+                buf = buf[end + 2:]
+                yield frame
+
+    def stop_stream(self) -> None:
+        with self._lock:
+            if self._proc is not None:
+                self._proc.kill()
+                self._proc = None
 
 
 if __name__ == "__main__":
