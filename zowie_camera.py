@@ -91,11 +91,16 @@ class ZowieCamera:
         # 4K HEVC main stream: the main stream's B-frame references didn't
         # survive continuous software decode on the Nano (visible as gray/
         # noisy corrupted frames — ffmpeg logged "Could not find ref with
-        # POC ..." repeatedly). The sub-stream is already 640x360 H.264, so
-        # no low_delay/nobuffer tricks are needed either — those made the
-        # HEVC reference problem worse, not better.
+        # POC ..." repeatedly). The sub-stream is plain H.264 baseline, which
+        # tolerates the low-latency flags the HEVC stream choked on: skip
+        # ffmpeg's default multi-MB probing/analyze pass (it was adding
+        # noticeable startup/steady-state lag on its own) and disable input
+        # jitter buffering so frames get decoded as they arrive instead of
+        # being queued.
         cmd = [
             "ffmpeg", "-nostdin", "-loglevel", "error",
+            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-probesize", "32", "-analyzeduration", "0",
             "-rtsp_transport", "tcp", "-i", self.stream_rtsp_url,
             "-an", "-r", str(self.stream_fps),
             "-q:v", "5", "-f", "mjpeg", "-",
