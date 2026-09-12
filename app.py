@@ -1,105 +1,56 @@
-from flask import Flask, render_template_string
-import OPi.GPIO as GPIO
-import threading
+"""Universe Booth camera page — Jetson Nano.
+
+Serves a live MJPEG view from the Zowie camera as a locally-hosted page,
+meant to be opened fullscreen (kiosk-mode Chromium) on the Nano's HDMI
+output at boot.
+"""
+
+from __future__ import annotations
+
+import os
 import time
+
+from flask import Flask, Response, render_template
+
+from zowie_camera import ZowieCamera
 
 app = Flask(__name__)
 
+CAMERA_IP = os.environ.get("ZOWIE_CAMERA_IP", "10.1.10.142")
+FRAME_PATH = "/tmp/universe_booth_frame.jpg"
 
-# Setup the GPIO pins
-MQ3_PIN = 11 
-drunk_value = 0
-
-#GPIO.setboard(GPIO.PCPCPLUS) 
-GPIO.setboard(GPIO.H616)   # Orange Pi PC board
-GPIO.setmode(GPIO.BOARD)  
+camera = ZowieCamera(ip=CAMERA_IP)
 
 
-# Set MQ3 pin should make sure it's analog
-GPIO.setup(MQ3_PIN, GPIO.IN)
-
-# Define thresholds for Sober and Drunk
-SOBER_THRESHOLD = 120  # Adjust as needed
-DRUNK_THRESHOLD = 400  # Adjust as needed
-
-sensor_value = None
-status = None
-countdown = 2
-time_left = None
-
-
-# Function to read MQ-3 sensor
-def read_mq3_sensor():
-    value = GPIO.input(MQ3_PIN)
-    return value
-
-# Function to get status from MQ-3 sensor value
-def get_status(sensor_value):
-    if sensor_value < SOBER_THRESHOLD:
-        return "Stone Cold Sober"
-    elif SOBER_THRESHOLD <= sensor_value < DRUNK_THRESHOLD:
-        return "Drinking but within legal limits"
-    else:
-        return "DRUNK"
-
-
-def read_mq3_sensor_continuously():
-    countdown_timer()
-    global sensor_value, status
+def mjpeg_generator():
+    boundary = b"--frame"
     while True:
-        sensor_value = read_mq3_sensor()
-        status = get_status(sensor_value)
-        time.sleep(1)  # Adjust the sleep time as needed
+        ok = camera.snapshot(FRAME_PATH, full_res=False)
+        if ok:
+            with open(FRAME_PATH, "rb") as f:
+                frame = f.read()
+            yield (
+                boundary + b"\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
+                + frame + b"\r\n"
+            )
+        else:
+            time.sleep(0.5)
 
-def countdown_timer():
-    total_seconds = countdown * 60
-    while total_seconds:
-        minutes, seconds = divmod(total_seconds, 60)
-        print(f'{minutes:02d}:{seconds:02d}', end='\r')
-        time.sleep(1)
-        total_seconds -= 1
-        time_left = total_seconds
-    time_left = 0
 
-@app.route('/sensor_value')
-def alcohol_level():
-    return sensor_value
-
-@app.route('/')
+@app.route("/")
 def index():
+    return render_template("index.html", camera_ip=CAMERA_IP)
 
-    html = '''
-    <!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-        <title>Sensor Values</title>
-      </head>
-      <body>
-        <div class="container">
-        {% if time_left > 0 || time_left == None%}
-          <h1>To Start, you'd have to wait for 2 minutes, at first</h1>
-          <p> {{time_left}} </p>
-          {% else %}
-          <h1 class="mt-5">Sensor Values</h1>
-          {% if sensor_value is not none %}
-          <p class="lead">MQ-3 Sensor Value: {{ sensor_value }}</p>
-          <p class="lead">Status: {{ status }}</p>
-          {% else %}
-          <p class="lead">Move closer to see MQ-3 sensor values.</p>
-          {% endif %}
-        {% endif %}
 
-        </div>
-      </body>
-    </html>
-    '''
-    return render_template_string(html, sensor_value=sensor_value, status=status)
+@app.route("/stream")
+def stream():
+    return Response(
+        mjpeg_generator(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
 
-if __name__ == '__main__':
-    try:
-        threading.Thread(target=read_mq3_sensor_continuously, daemon=True).start()
-        app.run(host='0.0.0.0', port=5000, debug=True)
-    except KeyboardInterrupt:
-        GPIO.cleanup()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
