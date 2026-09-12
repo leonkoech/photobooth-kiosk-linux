@@ -18,8 +18,10 @@
         height: 100vh;
         width: 100vw;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
+        padding-top: 6vh;
+        box-sizing: border-box;
       }
 
       .polaroid {
@@ -97,13 +99,13 @@
         bottom: 5vh;
         left: 50%;
         transform: translateX(-50%);
-        width: 20vw;
-        max-width: 100px;
-        height: 20vw;
-        max-height: 100px;
+        width: 25vw;
+        max-width: 130px;
+        height: 25vw;
+        max-height: 130px;
         border-radius: 50%;
         background: #fff;
-        border: 6px solid #222;
+        border: 7px solid #222;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
         cursor: pointer;
         z-index: 3;
@@ -237,6 +239,18 @@
 
       function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+      // -- stream reconnect: if the backend restarts or the connection
+      // drops while a customer is mid-session, an <img> pointing at an
+      // MJPEG stream just goes stale/black forever with no retry of its
+      // own. Reload it whenever it errors, and as a periodic safety net.
+      let showingCapture = false;
+      function reconnectStream() {
+        if (showingCapture) return;
+        liveFeed.src = streamUrl + '?t=' + Date.now();
+      }
+      liveFeed.addEventListener('error', () => setTimeout(reconnectStream, 1000));
+      setInterval(() => { if (!showingCapture) reconnectStream(); }, 30000);
+
       async function runCountdown() {
         overlay.classList.add('active');
         for (const n of [3, 2, 1]) {
@@ -261,8 +275,10 @@
           const res = await fetch('/capture', { method: 'POST' });
           const data = await res.json();
           if (data.ok) {
+            showingCapture = true;
             liveFeed.src = data.url;       // show the still that was just captured
             await sleep(6000);
+            showingCapture = false;
             liveFeed.src = streamUrl + '?t=' + Date.now();  // back to live view
           }
         } catch (e) {
