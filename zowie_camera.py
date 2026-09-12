@@ -28,6 +28,9 @@ class ZowieCamera:
 
     _proc: Optional[subprocess.Popen] = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _latest_frame: Optional[bytes] = field(default=None, init=False, repr=False)
+    _frame_cond: threading.Condition = field(default_factory=threading.Condition, init=False, repr=False)
+    _reader_started: bool = field(default=False, init=False, repr=False)
 
     @property
     def rtsp_url(self) -> str:
@@ -93,10 +96,13 @@ class ZowieCamera:
             stdin=subprocess.DEVNULL, bufsize=0,
         )
 
-    def mjpeg_frames(self) -> Iterator[bytes]:
-        """Yield raw JPEG frame bytes forever from ONE persistent RTSP
-        connection — no per-frame reconnect, so this is the low-latency path
-        for a live view. Transparently restarts ffmpeg if it dies/stalls."""
+    def _reader_loop(self) -> None:
+        """Runs in ONE background thread for the lifetime of the process.
+        Drains ffmpeg's stdout, reassembles complete JPEG frames, and
+        publishes each one to _latest_frame. Multiple client generators can
+        safely consume the same published frame — only this thread ever
+        touches the pipe, avoiding the split-frame corruption you get if two
+        readers race on the same fd."""
         buf = b""
         while True:
             with self._lock:
@@ -105,7 +111,6 @@ class ZowieCamera:
             proc = self._proc
             chunk = proc.stdout.read(4096)
             if not chunk:
-                # stream died — drop it and reconnect after a short backoff
                 with self._lock:
                     self._proc = None
                 buf = b""
@@ -124,6 +129,26 @@ class ZowieCamera:
                     break
                 frame = buf[start:end + 2]
                 buf = buf[end + 2:]
+                with self._frame_cond:
+                    self._latest_frame = frame
+                    self._frame_cond.notify_all()
+
+    def mjpeg_frames(self) -> Iterator[bytes]:
+        """Yield the latest JPEG frame each time a new one arrives. Safe to
+        call from multiple concurrent clients — each gets its own generator,
+        but they all share the single background reader thread."""
+        with self._lock:
+            if not self._reader_started:
+                self._reader_started = True
+                threading.Thread(target=self._reader_loop, daemon=True).start()
+
+        last = None
+        while True:
+            with self._frame_cond:
+                self._frame_cond.wait_for(lambda: self._latest_frame is not last, timeout=2)
+                frame = self._latest_frame
+            if frame is not None and frame is not last:
+                last = frame
                 yield frame
 
     def stop_stream(self) -> None:
