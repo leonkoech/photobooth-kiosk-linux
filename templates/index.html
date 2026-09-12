@@ -23,15 +23,12 @@
       }
 
       .polaroid {
-        background: #fdfdfb;
-        padding: 4vw 4vw 8vw 4vw;
-        border-radius: 4px;
+        background: linear-gradient(180deg, #fdfdfb, #f2f2ef);
+        padding: 3vw 3vw 9vw 3vw;
+        border-radius: 6px;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 88vw;
-        max-width: 720px;
+        width: 90vw;
+        max-width: 900px;
       }
 
       .photo-window {
@@ -45,10 +42,11 @@
         justify-content: center;
       }
 
-      .photo-window img.live {
+      .photo-window img {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        display: block;
       }
 
       .flash {
@@ -57,75 +55,282 @@
         background: #fff;
         opacity: 0;
         pointer-events: none;
+        z-index: 5;
       }
-      .flash.fire {
-        animation: flash-anim 0.4s ease-out;
-      }
+      .flash.fire { animation: flash-anim 0.5s ease-out; }
       @keyframes flash-anim {
-        0% { opacity: 0.95; }
+        0% { opacity: 1; }
         100% { opacity: 0; }
       }
 
-      .caption {
-        margin-top: 6vw;
-        font-family: "Segoe Script", "Brush Script MT", cursive;
-        font-size: 6vw;
-        color: #333;
+      /* -- countdown overlay -- */
+      .countdown-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 4;
+      }
+      .countdown-overlay.active { display: flex; }
+      .countdown-number {
+        font-size: 34vw;
+        font-weight: 800;
+        color: #fff;
+        text-shadow: 0 0 30px rgba(0,0,0,0.6), 0 8px 0 rgba(0,0,0,0.25);
+        -webkit-text-stroke: 3px rgba(0,0,0,0.15);
+      }
+      .countdown-number.pop {
+        animation: pop-anim 1s cubic-bezier(.34,1.56,.64,1);
+      }
+      @keyframes pop-anim {
+        0%   { transform: scale(2.2); opacity: 0; }
+        30%  { transform: scale(0.85); opacity: 1; }
+        50%  { transform: scale(1.05); }
+        100% { transform: scale(1); opacity: 1; }
       }
 
+      /* -- shutter button -- */
       .shutter-btn {
         position: fixed;
-        bottom: 6vh;
+        bottom: 5vh;
         left: 50%;
         transform: translateX(-50%);
-        width: 22vw;
-        max-width: 110px;
-        height: 22vw;
-        max-height: 110px;
+        width: 20vw;
+        max-width: 100px;
+        height: 20vw;
+        max-height: 100px;
         border-radius: 50%;
         background: #fff;
         border: 6px solid #222;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
         cursor: pointer;
+        z-index: 3;
       }
-      .shutter-btn:active {
-        transform: translateX(-50%) scale(0.92);
+      .shutter-btn:active { transform: translateX(-50%) scale(0.92); }
+      .shutter-btn:disabled { opacity: 0.4; }
+
+      /* -- admin corner -- */
+      .admin-corner {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: flex-end;
+        padding: 14px;
+        box-sizing: border-box;
+        opacity: 0.18;
+        z-index: 10;
+        cursor: pointer;
       }
-      .shutter-btn:disabled {
-        opacity: 0.5;
+      .admin-corner:active { opacity: 0.5; }
+      .admin-corner svg { width: 20px; height: 20px; stroke: #fff; }
+
+      .admin-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.75);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
       }
+      .admin-modal.active { display: flex; }
+      .admin-card {
+        background: #1c1c1e;
+        border-radius: 12px;
+        padding: 28px;
+        width: 80vw;
+        max-width: 340px;
+        color: #fff;
+        text-align: center;
+      }
+      .admin-card h3 { margin: 0 0 16px; font-weight: 600; }
+      .admin-card input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #444;
+        background: #0f0f10;
+        color: #fff;
+        font-size: 16px;
+        margin-bottom: 12px;
+      }
+      .admin-card button.submit {
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        border: none;
+        background: #3a7afe;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .admin-card .error { color: #ff6161; font-size: 13px; min-height: 16px; margin-bottom: 6px; }
+      .admin-card .close { margin-top: 14px; color: #888; font-size: 13px; cursor: pointer; }
+
+      .admin-panel { display: none; flex-direction: column; gap: 10px; margin-top: 4px; }
+      .admin-panel.active { display: flex; }
+      .admin-panel button {
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #444;
+        background: #2a2a2c;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .admin-panel button:active { background: #3a3a3c; }
     </style>
   </head>
   <body>
     <div class="stage">
       <div class="polaroid">
         <div class="photo-window">
-          <img class="live" id="live-feed" src="{{ url_for('stream') }}" alt="camera preview">
+          <img id="live-feed" src="{{ url_for('stream') }}" alt="camera preview">
+          <div class="countdown-overlay" id="countdown-overlay">
+            <div class="countdown-number" id="countdown-number">3</div>
+          </div>
           <div class="flash" id="flash"></div>
         </div>
-        <div class="caption">Universe Booth</div>
       </div>
     </div>
 
     <button class="shutter-btn" id="shutter" aria-label="Take photo"></button>
 
+    <div class="admin-corner" id="admin-corner" aria-label="Admin">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 15 12 9 18 15"></polyline>
+      </svg>
+    </div>
+
+    <div class="admin-modal" id="admin-modal">
+      <div class="admin-card">
+        <h3 id="admin-title">Admin Access</h3>
+        <div class="error" id="admin-error"></div>
+        <div id="admin-login">
+          <input type="password" id="admin-password" placeholder="sudo password" autocomplete="off">
+          <button class="submit" id="admin-submit">Unlock</button>
+        </div>
+        <div class="admin-panel" id="admin-panel">
+          <button data-action="wifi">Open Wi-Fi Settings</button>
+          <button data-action="restart_camera">Restart Camera Service</button>
+          <button data-action="reboot">Reboot Booth</button>
+          <button data-action="shutdown">Shut Down Booth</button>
+        </div>
+        <div class="close" id="admin-close">Close</div>
+      </div>
+    </div>
+
     <script>
       const shutter = document.getElementById('shutter');
       const flash = document.getElementById('flash');
+      const liveFeed = document.getElementById('live-feed');
+      const overlay = document.getElementById('countdown-overlay');
+      const countEl = document.getElementById('countdown-number');
+      const streamUrl = "{{ url_for('stream') }}";
+
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+      async function runCountdown() {
+        overlay.classList.add('active');
+        for (const n of [3, 2, 1]) {
+          countEl.textContent = n;
+          countEl.classList.remove('pop');
+          void countEl.offsetWidth;
+          countEl.classList.add('pop');
+          await sleep(900);
+        }
+        overlay.classList.remove('active');
+      }
 
       shutter.addEventListener('click', async () => {
         shutter.disabled = true;
+        await runCountdown();
+
         flash.classList.remove('fire');
-        void flash.offsetWidth; // restart animation
+        void flash.offsetWidth;
         flash.classList.add('fire');
 
         try {
-          await fetch('/capture', { method: 'POST' });
+          const res = await fetch('/capture', { method: 'POST' });
+          const data = await res.json();
+          if (data.ok) {
+            liveFeed.src = data.url;       // show the still that was just captured
+            await sleep(6000);
+            liveFeed.src = streamUrl + '?t=' + Date.now();  // back to live view
+          }
         } catch (e) {
           console.error('capture failed', e);
         }
 
-        setTimeout(() => { shutter.disabled = false; }, 1200);
+        shutter.disabled = false;
+      });
+
+      // -- admin panel --
+      const adminCorner = document.getElementById('admin-corner');
+      const adminModal = document.getElementById('admin-modal');
+      const adminClose = document.getElementById('admin-close');
+      const adminLogin = document.getElementById('admin-login');
+      const adminPanel = document.getElementById('admin-panel');
+      const adminPassword = document.getElementById('admin-password');
+      const adminSubmit = document.getElementById('admin-submit');
+      const adminError = document.getElementById('admin-error');
+      let sessionPassword = null;
+
+      adminCorner.addEventListener('click', () => {
+        adminModal.classList.add('active');
+      });
+      adminClose.addEventListener('click', () => {
+        adminModal.classList.remove('active');
+        adminLogin.style.display = '';
+        adminPanel.classList.remove('active');
+        adminError.textContent = '';
+        adminPassword.value = '';
+        sessionPassword = null;
+      });
+
+      adminSubmit.addEventListener('click', async () => {
+        const pw = adminPassword.value;
+        adminError.textContent = '';
+        try {
+          const res = await fetch('/admin/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            sessionPassword = pw;
+            adminLogin.style.display = 'none';
+            adminPanel.classList.add('active');
+          } else {
+            adminError.textContent = 'Incorrect password';
+          }
+        } catch (e) {
+          adminError.textContent = 'Request failed';
+        }
+      });
+
+      adminPanel.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('button[data-action]');
+        if (!btn || !sessionPassword) return;
+        btn.disabled = true;
+        try {
+          await fetch('/admin/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: sessionPassword, action: btn.dataset.action }),
+          });
+        } catch (e) {
+          console.error('admin action failed', e);
+        }
+        btn.disabled = false;
       });
     </script>
   </body>

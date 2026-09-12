@@ -22,8 +22,8 @@ from typing import Iterator, List, Optional
 class ZowieCamera:
     ip: str
     port: int = 554
-    path: str = "/main/av"          # Zowietek's default RTSP main-stream path
-    stream_width: int = 480
+    path: str = "/main/av"          # full-res HEVC main stream — used for still captures
+    stream_path: str = "/sub/av"    # lightweight H.264 640x360 stream — used for the live view
     stream_fps: int = 15
 
     _proc: Optional[subprocess.Popen] = field(default=None, init=False, repr=False)
@@ -36,14 +36,18 @@ class ZowieCamera:
     def rtsp_url(self) -> str:
         return f"rtsp://{self.ip}:{self.port}{self.path}"
 
+    @property
+    def stream_rtsp_url(self) -> str:
+        return f"rtsp://{self.ip}:{self.port}{self.stream_path}"
+
     def snapshot(self, out_path: str, *, full_res: bool = True, timeout: int = 12) -> bool:
-        """Grab ONE JPEG frame. full_res=False scales to 640px wide (fast preview,
-        matches the AGX dashboard's use of this same call). Returns True iff a
-        non-empty file landed at out_path — never raises.
+        """Grab ONE JPEG frame from the full-res main stream. Returns True iff
+        a non-empty file landed at out_path — never raises.
 
         NOTE: this opens a fresh RTSP connection every call (~1-2s of handshake
         overhead) — fine for an occasional still, too slow for a live view. Use
-        mjpeg_frames() for continuous streaming.
+        mjpeg_frames() for continuous streaming (which uses the lighter
+        sub-stream instead of this one).
         """
         vf = [] if full_res else ["-vf", "scale=640:-2"]
         cmd = [
@@ -83,12 +87,17 @@ class ZowieCamera:
     # -- continuous streaming --------------------------------------------
 
     def _spawn_stream_proc(self) -> subprocess.Popen:
+        # Deliberately uses the camera's lightweight H.264 sub-stream, not the
+        # 4K HEVC main stream: the main stream's B-frame references didn't
+        # survive continuous software decode on the Nano (visible as gray/
+        # noisy corrupted frames — ffmpeg logged "Could not find ref with
+        # POC ..." repeatedly). The sub-stream is already 640x360 H.264, so
+        # no low_delay/nobuffer tricks are needed either — those made the
+        # HEVC reference problem worse, not better.
         cmd = [
             "ffmpeg", "-nostdin", "-loglevel", "error",
-            "-fflags", "nobuffer", "-flags", "low_delay",
-            "-rtsp_transport", "tcp", "-i", self.rtsp_url,
+            "-rtsp_transport", "tcp", "-i", self.stream_rtsp_url,
             "-an", "-r", str(self.stream_fps),
-            "-vf", f"scale={self.stream_width}:-2",
             "-q:v", "5", "-f", "mjpeg", "-",
         ]
         return subprocess.Popen(
