@@ -15,11 +15,19 @@ import re
 import subprocess
 import time
 
-from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 from zowie_camera import ZowieCamera
 
-app = Flask(__name__)
+# The UI itself lives in the leonkoech/photobooth-kiosk-front repo (a Next.js
+# app built with `output: "export"`) and is deployed here as a static export
+# -- this Flask app is purely the API + camera/printer backend. Serving the
+# export directly (static_url_path="") means its asset paths (/_next/...,
+# /favicon.ico) resolve at the root alongside the API routes below, same
+# origin, no CORS. Rebuild the frontend and copy its `out/` here to update.
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend_dist")
+
+app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="")
 
 CAMERA_IP = os.environ.get("ZOWIE_CAMERA_IP", "10.1.10.142")
 CAPTURES_DIR = os.path.join(os.path.dirname(__file__), "captures")
@@ -81,7 +89,7 @@ def mjpeg_generator():
 
 @app.route("/")
 def index():
-    return render_template("index.html", camera_ip=CAMERA_IP)
+    return send_from_directory(FRONTEND_DIST, "index.html")
 
 
 @app.route("/stream")
