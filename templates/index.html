@@ -506,14 +506,39 @@
 
       // Combine the captured photo + signature into one image to send to
       // the printer (and, later, whatever we build for phone/SMS delivery).
+      //
+      // This has to do two things carefully:
+      // 1. Render at the FULL resolution of the captured photo (liveFeed at
+      //    this point is the 4K still from /capture), not at the on-screen
+      //    preview's tiny CSS pixel size — otherwise the print comes out
+      //    looking like a blown-up thumbnail regardless of how good the
+      //    source photo actually is.
+      // 2. Crop that full-res image the same way the on-screen preview
+      //    cropped it (object-fit: cover into a 4:5 box) before placing the
+      //    signature — the signature was drawn relative to what the
+      //    customer actually saw, so compositing it onto the *uncropped*
+      //    full frame would shift it relative to their face/subject.
       function composeFinalImage() {
+        const targetAspect = signCanvas.width / signCanvas.height; // matches photo-window's aspect
+        const outW = 1600;
+        const outH = Math.round(outW / targetAspect);
+
+        const iw = liveFeed.naturalWidth || signCanvas.width;
+        const ih = liveFeed.naturalHeight || signCanvas.height;
+        let sx, sy, sw, sh;
+        if (iw / ih > targetAspect) {
+          sh = ih; sw = ih * targetAspect; sx = (iw - sw) / 2; sy = 0;
+        } else {
+          sw = iw; sh = iw / targetAspect; sx = 0; sy = (ih - sh) / 2;
+        }
+
         const out = document.createElement('canvas');
-        out.width = signCanvas.width;
-        out.height = signCanvas.height;
+        out.width = outW;
+        out.height = outH;
         const ctx = out.getContext('2d');
-        ctx.drawImage(liveFeed, 0, 0, out.width, out.height);
-        ctx.drawImage(signCanvas, 0, 0);
-        return out.toDataURL('image/jpeg', 0.92);
+        ctx.drawImage(liveFeed, sx, sy, sw, sh, 0, 0, outW, outH);
+        ctx.drawImage(signCanvas, 0, 0, outW, outH);
+        return out.toDataURL('image/jpeg', 0.95);
       }
 
       let finalImageDataUrl = null;

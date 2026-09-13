@@ -104,7 +104,7 @@ class ZowieCamera:
             "-max_delay", "0", "-reorder_queue_size", "0",
             "-rtsp_transport", "tcp", "-i", self.stream_rtsp_url,
             "-an", "-vsync", "0",
-            "-q:v", "5", "-f", "mjpeg", "-",
+            "-q:v", "2", "-f", "mjpeg", "-",
         ]
         return subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
