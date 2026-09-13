@@ -7,8 +7,11 @@ output at boot.
 
 from __future__ import annotations
 
+import base64
 import ipaddress
+import json
 import os
+import re
 import subprocess
 import time
 
@@ -20,6 +23,12 @@ app = Flask(__name__)
 
 CAMERA_IP = os.environ.get("ZOWIE_CAMERA_IP", "10.1.10.142")
 CAPTURES_DIR = os.path.join(os.path.dirname(__file__), "captures")
+PRINTS_DIR = os.path.join(os.path.dirname(__file__), "prints")
+PHONES_LOG = os.path.join(os.path.dirname(__file__), "phones.jsonl")
+
+# CUPS queue name for the Canon Selphy CP1300, once it's plugged in and added
+# via `lpadmin -p Canon_SELPHY_CP1300 -E -v usb://... -m gutenprint.5.3://canon-cp1300/expert`
+PRINTER_NAME = os.environ.get("PRINTER_NAME", "Canon_SELPHY_CP1300")
 
 # The kiosk's own display — needed to launch GUI settings apps (e.g. Wi-Fi)
 # from the Flask process, which runs headless under systemd.
@@ -31,6 +40,7 @@ KIOSK_XAUTHORITY = os.environ.get(
 camera = ZowieCamera(ip=CAMERA_IP)
 
 os.makedirs(CAPTURES_DIR, exist_ok=True)
+os.makedirs(PRINTS_DIR, exist_ok=True)
 
 
 def _require_local_request():
@@ -95,6 +105,63 @@ def capture():
 @app.route("/captures/<path:filename>")
 def captures(filename):
     return send_from_directory(CAPTURES_DIR, filename)
+
+
+@app.route("/save_phone", methods=["POST"])
+def save_phone():
+    body = request.get_json(silent=True) or {}
+    phone = re.sub(r"[^0-9+]", "", body.get("phone", ""))
+    if not phone:
+        return jsonify({"ok": False, "error": "empty phone number"}), 400
+    # No SMS/delivery service is wired up yet — this just records the number
+    # against the session so it's not lost once that exists.
+    with open(PHONES_LOG, "a") as f:
+        f.write(json.dumps({"ts": time.time(), "phone": phone}) + "\n")
+    return jsonify({"ok": True})
+
+
+@app.route("/payment/charge", methods=["POST"])
+def payment_charge():
+    # PLACEHOLDER — the Stripe Reader M2 hasn't arrived yet. Once it has,
+    # this needs: a backend endpoint that creates a Stripe Terminal
+    # ConnectionToken, the Stripe Terminal JS SDK on the frontend to
+    # discover/connect the M2 over Bluetooth, then create + collect +
+    # confirm a PaymentIntent before calling this route. For now this
+    # always "succeeds" so the rest of the flow (sign -> phone -> pay ->
+    # print) can be built and tested without the hardware.
+    return jsonify({"ok": True, "simulated": True})
+
+
+@app.route("/print", methods=["POST"])
+def print_photo():
+    body = request.get_json(silent=True) or {}
+    data_url = body.get("image", "")
+    match = re.match(r"^data:image/(png|jpeg);base64,(.+)$", data_url)
+    if not match:
+        return jsonify({"ok": False, "error": "invalid image data"}), 400
+
+    ext = "png" if match.group(1) == "png" else "jpg"
+    filename = f"print_{int(time.time() * 1000)}.{ext}"
+    out_path = os.path.join(PRINTS_DIR, filename)
+    with open(out_path, "wb") as f:
+        f.write(base64.b64decode(match.group(2)))
+
+    try:
+        result = subprocess.run(
+            ["lp", "-d", PRINTER_NAME, out_path],
+            capture_output=True, timeout=30,
+        )
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "CUPS 'lp' command not found"}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "print command timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({
+            "ok": False,
+            "error": result.stderr.decode(errors="replace").strip() or "print job failed",
+        }), 502
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/verify", methods=["POST"])
