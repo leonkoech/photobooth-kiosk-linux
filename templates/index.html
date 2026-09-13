@@ -205,6 +205,43 @@
       }
       .keypad button:active { background: rgba(255,255,255,0.22); }
 
+      /* quantity stepper */
+      .qty-row {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+      }
+      .qty-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255,255,255,0.12);
+        color: #fff;
+        font-size: 1.8rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .qty-btn:active { background: rgba(255,255,255,0.24); }
+      .qty-value {
+        color: #fff;
+        font-size: 2.4rem;
+        font-weight: 700;
+        min-width: 2ch;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* confirm summary */
+      .confirm-summary {
+        color: #fff;
+        font-size: 1rem;
+        text-align: center;
+        line-height: 1.6;
+      }
+      .confirm-summary .row { display: flex; justify-content: space-between; gap: 24px; }
+      .confirm-summary .label { color: #999; }
+
       /* payment */
       .pay-card {
         display: flex;
@@ -354,7 +391,7 @@
 
     <!-- Phone number -->
     <div class="flow-panel" id="panel-phone">
-      <div class="flow-title">Enter your phone number</div>
+      <div class="flow-title">To print, please enter your number</div>
       <div class="flow-subtitle">We'll use this to send you your photo</div>
       <div class="phone-display" id="phone-display">&nbsp;</div>
       <div class="keypad" id="phone-keypad">
@@ -364,6 +401,27 @@
         <button data-k="back">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
       </div>
       <button class="flow-btn secondary" id="phone-skip" style="max-width:320px;">Skip</button>
+    </div>
+
+    <!-- Quantity -->
+    <div class="flow-panel" id="panel-quantity">
+      <div class="flow-title">How many copies?</div>
+      <div class="flow-subtitle">Each copy prints on the Polaroid printer</div>
+      <div class="qty-row">
+        <button class="qty-btn" id="qty-minus">&minus;</button>
+        <div class="qty-value" id="qty-value">1</div>
+        <button class="qty-btn" id="qty-plus">&plus;</button>
+      </div>
+      <button class="flow-btn primary" id="qty-next" style="max-width:320px;">Continue</button>
+    </div>
+
+    <!-- Confirm -->
+    <div class="flow-panel" id="panel-confirm">
+      <div class="flow-title">Confirm your order</div>
+      <div class="confirm-summary" id="confirm-summary"></div>
+      <div class="flow-subtitle">Tap card to pay after confirmation</div>
+      <button class="flow-btn primary" id="confirm-next" style="max-width:320px;">Confirm &amp; Pay</button>
+      <button class="flow-btn secondary" id="confirm-back" style="max-width:320px;">Back</button>
     </div>
 
     <!-- Payment -->
@@ -427,6 +485,8 @@
       const panels = {
         sign: document.getElementById('panel-sign'),
         phone: document.getElementById('panel-phone'),
+        quantity: document.getElementById('panel-quantity'),
+        confirm: document.getElementById('panel-confirm'),
         pay: document.getElementById('panel-pay'),
         print: document.getElementById('panel-print'),
       };
@@ -573,7 +633,7 @@
         renderPhone();
       });
 
-      document.getElementById('phone-skip').addEventListener('click', () => startPaymentStep());
+      document.getElementById('phone-skip').addEventListener('click', () => startQuantityStep());
 
       async function submitPhone() {
         if (phoneDigits) {
@@ -585,8 +645,47 @@
             });
           } catch (e) { console.error('save_phone failed', e); }
         }
-        startPaymentStep();
+        startQuantityStep();
       }
+
+      // ---------- quantity step ----------
+      let quantity = 1;
+      const qtyValueEl = document.getElementById('qty-value');
+
+      function renderQty() { qtyValueEl.textContent = quantity; }
+
+      function startQuantityStep() {
+        quantity = 1;
+        renderQty();
+        showPanel('quantity');
+      }
+
+      document.getElementById('qty-minus').addEventListener('click', () => {
+        quantity = Math.max(1, quantity - 1);
+        renderQty();
+      });
+      document.getElementById('qty-plus').addEventListener('click', () => {
+        quantity = Math.min(20, quantity + 1);
+        renderQty();
+      });
+      document.getElementById('qty-next').addEventListener('click', () => startConfirmStep());
+
+      // ---------- confirm step ----------
+      const confirmSummaryEl = document.getElementById('confirm-summary');
+
+      function startConfirmStep() {
+        const phoneLine = phoneDigits
+          ? `<div class="row"><span class="label">Phone</span><span>${phoneDigits}</span></div>`
+          : `<div class="row"><span class="label">Phone</span><span>skipped</span></div>`;
+        confirmSummaryEl.innerHTML = `
+          ${phoneLine}
+          <div class="row"><span class="label">Copies</span><span>${quantity}</span></div>
+        `;
+        showPanel('confirm');
+      }
+
+      document.getElementById('confirm-back').addEventListener('click', () => startQuantityStep());
+      document.getElementById('confirm-next').addEventListener('click', () => startPaymentStep());
 
       // ---------- payment step ----------
       function startPaymentStep() { showPanel('pay'); }
@@ -613,7 +712,7 @@
           const res = await fetch('/print', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: finalImageDataUrl }),
+            body: JSON.stringify({ image: finalImageDataUrl, copies: quantity }),
           });
           const data = await res.json();
           statusEl.textContent = data.ok ? 'Enjoy your Polaroid!' : 'Printer not connected yet';
@@ -629,6 +728,8 @@
         liveFeed.src = streamUrl + '?t=' + Date.now();
         hideAllPanels();
         shutter.disabled = false;
+        phoneDigits = '';
+        quantity = 1;
       }
 
       // ---------- capture entry point (button or spacebar) ----------
@@ -659,12 +760,13 @@
         }
       }
 
+      function anyPanelActive() {
+        return Object.values(panels).some(el => el.classList.contains('active'));
+      }
+
       shutter.addEventListener('click', takePhoto);
       window.addEventListener('keydown', (ev) => {
-        if (ev.code === 'Space' && !panels.sign.classList.contains('active')
-            && !panels.phone.classList.contains('active')
-            && !panels.pay.classList.contains('active')
-            && !panels.print.classList.contains('active')) {
+        if (ev.code === 'Space' && !anyPanelActive()) {
           ev.preventDefault();
           takePhoto();
         }

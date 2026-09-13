@@ -136,6 +136,7 @@ def payment_charge():
 def print_photo():
     body = request.get_json(silent=True) or {}
     data_url = body.get("image", "")
+    copies = max(1, min(20, int(body.get("copies", 1) or 1)))
     match = re.match(r"^data:image/(png|jpeg);base64,(.+)$", data_url)
     if not match:
         return jsonify({"ok": False, "error": "invalid image data"}), 400
@@ -148,7 +149,7 @@ def print_photo():
 
     try:
         result = subprocess.run(
-            ["lp", "-d", PRINTER_NAME, out_path],
+            ["lp", "-d", PRINTER_NAME, "-n", str(copies), out_path],
             capture_output=True, timeout=30,
         )
     except FileNotFoundError:
