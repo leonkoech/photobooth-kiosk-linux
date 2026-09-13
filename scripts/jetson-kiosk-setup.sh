@@ -5,16 +5,18 @@
 # chrome-free view of the local photobooth-kiosk-linux Flask app.
 #
 # This is the Jetson equivalent of gopro-automation-linux's
-# scripts/pi-kiosk-setup.sh, but for this box specifically -- Chromium isn't
-# usable here (only ships as a snap on this Ubuntu image, and snap-confine
-# fails outright in this environment: "required permitted capability
-# cap_dac_override not found"), so this uses Epiphany (GNOME Web) instead,
-# worked around for its rough edges (see comments below).
+# scripts/pi-kiosk-setup.sh -- same idea (autologin + a browser locked into
+# one URL, no chrome, auto-restart on crash), different browser. Chromium
+# itself only ships as a snap on this Ubuntu image and snap-confine fails
+# outright here ("required permitted capability cap_dac_override not
+# found"), so this installs Brave instead: a real .deb (not snap), genuine
+# Chromium engine, and a true --kiosk mode with no tab strip to begin with.
 #
 #   sudo ./scripts/jetson-kiosk-setup.sh
 #
 # Idempotent -- re-run any time (e.g. after `git pull`) to refresh the
-# deployed helper scripts and systemd units.
+# deployed launcher script and systemd units. Re-running preserves an
+# already-configured ZOWIE_CAMERA_IP unless you explicitly override it.
 #
 # Target: Ubuntu 22.04 (Jammy) on Jetson Nano/Orin with L4T NVIDIA drivers,
 # GNOME on Xorg via GDM. Assumes this repo is already cloned somewhere on
@@ -26,10 +28,15 @@ set -euo pipefail
 KIOSK_USER="${KIOSK_USER:-developer}"
 APP_DIR="${APP_DIR:-/home/$KIOSK_USER/app/photobooth-kiosk-linux}"
 BOOTH_PORT="${BOOTH_PORT:-5000}"
-ZOWIE_CAMERA_IP="${ZOWIE_CAMERA_IP:-10.1.10.142}"
 DISPLAY_OUTPUT="${DISPLAY_OUTPUT:-DP-0}"
 ROTATE="${ROTATE:-left}"   # left|right|inverted|normal
 PRINTER_NAME="${PRINTER_NAME:-Canon_SELPHY_CP1300}"
+
+EXISTING_SERVICE=/etc/systemd/system/photobooth-kiosk.service
+if [[ -z "${ZOWIE_CAMERA_IP:-}" && -f "$EXISTING_SERVICE" ]]; then
+  ZOWIE_CAMERA_IP="$(grep -oP 'ZOWIE_CAMERA_IP=\K[0-9.]+' "$EXISTING_SERVICE" || true)"
+fi
+ZOWIE_CAMERA_IP="${ZOWIE_CAMERA_IP:-10.1.10.142}"
 # ---------------------------------------------------------------------------
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -39,16 +46,28 @@ id "$KIOSK_USER" &>/dev/null || die "user '$KIOSK_USER' does not exist (set KIOS
 [[ -d "$APP_DIR" ]] || die "APP_DIR '$APP_DIR' does not exist -- clone the repo there first (or set APP_DIR=...)"
 
 HOME_DIR="/home/$KIOSK_USER"
-echo "==> kiosk user: $KIOSK_USER  home: $HOME_DIR"
-echo "==> app dir:    $APP_DIR"
+echo "==> kiosk user:  $KIOSK_USER  home: $HOME_DIR"
+echo "==> app dir:     $APP_DIR"
+echo "==> camera IP:   $ZOWIE_CAMERA_IP"
 
 # --- 1. packages -----------------------------------------------------------
 echo "==> installing packages…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  epiphany-browser xdotool unclutter python3-tk \
-  cups cups-client printer-driver-gutenprint
+  xdotool unclutter cups cups-client printer-driver-gutenprint
+
+if ! command -v brave-browser >/dev/null; then
+  echo "==> adding Brave's apt repo and installing brave-browser…"
+  curl -fsS https://brave-browser-apt-release.s3.brave.com/brave-core.asc \
+    | gpg --dearmor -o /usr/share/keyrings/brave-browser-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+    > /etc/apt/sources.list.d/brave-browser-release.list
+  apt-get update -qq
+  apt-get install -y brave-browser
+else
+  echo "==> brave-browser already installed"
+fi
 
 # --- 2. GDM autologin (no password prompt on boot) --------------------------
 echo "==> enabling GDM autologin for $KIOSK_USER…"
@@ -64,37 +83,7 @@ else
   echo "WARNING: $GDM_CONF not found -- skipping autologin setup, configure manually."
 fi
 
-# --- 3. toolbar-cover helper -------------------------------------------------
-# Epiphany's F11 fullscreen only strips window-manager chrome, not its own
-# internal nav toolbar (back/forward/URL bar) -- there's no clean flag to
-# remove that in this WebKitGTK version. Cover it with a fixed black bar.
-echo "==> installing toolbar-cover helper…"
-cat > "$HOME_DIR/toolbar_cover.py" <<'PYEOF'
-#!/usr/bin/env python3
-"""Covers the Epiphany navigation toolbar with a fixed black bar.
-
-Epiphany 42's F11 fullscreen only strips window-manager decorations, not its
-own internal nav toolbar (back/forward/URL bar) -- there's no clean way to
-hide that short of the (broken, in this environment) --application-mode. This
-just paints over it.
-"""
-import tkinter as tk
-
-root = tk.Tk()
-root.overrideredirect(True)
-root.attributes("-topmost", True)
-root.configure(bg="black")
-
-width = root.winfo_screenwidth()
-height = 60
-
-root.geometry(f"{width}x{height}+0+0")
-root.mainloop()
-PYEOF
-chown "$KIOSK_USER:$KIOSK_USER" "$HOME_DIR/toolbar_cover.py"
-chmod +x "$HOME_DIR/toolbar_cover.py"
-
-# --- 4. kiosk launcher --------------------------------------------------
+# --- 3. kiosk launcher --------------------------------------------------
 echo "==> installing kiosk launcher…"
 cat > "$HOME_DIR/booth-kiosk-launch.sh" <<EOF
 #!/bin/bash
@@ -104,18 +93,11 @@ set -u
 URL="http://localhost:$BOOTH_PORT/"
 DISPLAY_OUTPUT="$DISPLAY_OUTPUT"
 ROTATE="$ROTATE"   # left|right|inverted|normal — flip to "right" if upside down
+PROFILE="\$HOME/.config/brave-kiosk"
 
 sleep 8   # let the desktop + photobooth-kiosk service settle
 
 export DISPLAY="\${DISPLAY:-:1}"
-
-# This Nano's NVIDIA/Tegra driver doesn't ship a Mesa-compatible DRI blob, so
-# WebKitGTK's DMA-BUF/GBM accelerated-compositing path fails every frame
-# (libEGL: "failed to open nvidia-drm_dri.so" / "failed to create dri2
-# screen"), which was crashing the WebProcess intermittently and causing
-# Epiphany to pop open a blank "New Tab" as its crash-recovery fallback.
-# This env var makes WebKitGTK skip that path entirely.
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 # never let the screen lock/blank over the kiosk
 gsettings set org.gnome.desktop.session idle-delay 0
@@ -128,58 +110,45 @@ xset s off -dpms s noblank
 pkill -f unclutter 2>/dev/null
 unclutter -idle 0.5 -root &
 
-pkill -f epiphany 2>/dev/null
-pkill -f toolbar_cover.py 2>/dev/null
+pkill -9 -f brave-browser 2>/dev/null
 sleep 1
 
-read -r SCREEN_W SCREEN_H < <(xdotool getdisplaygeometry)
-PROFILE="\$HOME/.local/share/epiphany-kiosk"
-mkdir -p "\$PROFILE"
-
-setsid python3 "\$HOME/toolbar_cover.py" >/tmp/toolbar_cover.log 2>&1 < /dev/null &
-
 # Safety net for the physical shutter (spacebar): if anything ever steals
-# OS-level window focus from the kiosk (a transient dialog, etc.), a
-# keypress won't reach the page's JS at all no matter how the listener is
-# attached in-page. Periodically re-assert focus on the Epiphany window.
+# OS-level window focus from the kiosk, a keypress won't reach the page's
+# JS at all. Periodically re-assert focus on the Brave window.
 (
   while true; do
     sleep 5
-    W=\$(xdotool search --onlyvisible --class "Epiphany" 2>/dev/null | tail -1)
+    W=\$(xdotool search --onlyvisible --class "Brave-browser" 2>/dev/null | tail -1)
     [ -n "\$W" ] && xdotool windowactivate "\$W" 2>/dev/null
   done
 ) &
 
 while true; do
-  # The kiosk always wants the same single URL -- never let Epiphany's
-  # crash-recovery restore old (possibly crashed) tabs from a previous run.
-  rm -f "\$PROFILE/session_state.xml" "\$PROFILE/session_state.xml~"
-
-  epiphany --new-window --profile="\$PROFILE" "\$URL" &
-  EPI_PID=\$!
-
-  WIN=""
-  for i in 1 2 3 4 5 6 7 8; do
-    sleep 1
-    WIN=\$(xdotool search --onlyvisible --class "Epiphany" 2>/dev/null | tail -1)
-    [ -n "\$WIN" ] && break
-  done
-
-  if [ -n "\$WIN" ]; then
-    xdotool windowactivate --sync "\$WIN" 2>/dev/null
-    xdotool windowfocus --sync "\$WIN" 2>/dev/null
-    sleep 0.5
-    xdotool key F11
-  fi
-
-  wait "\$EPI_PID"
+  brave-browser \\
+    --kiosk \\
+    --noerrdialogs \\
+    --disable-infobars \\
+    --no-first-run \\
+    --disable-session-crashed-bubble \\
+    --disable-features=Translate \\
+    --overscroll-history-navigation=0 \\
+    --password-store=basic \\
+    --check-for-update-interval=31536000 \\
+    --user-data-dir="\$PROFILE" \\
+    "\$URL" &
+  BRAVE_PID=\$!
+  wait "\$BRAVE_PID"
   sleep 2
 done
 EOF
 chown "$KIOSK_USER:$KIOSK_USER" "$HOME_DIR/booth-kiosk-launch.sh"
 chmod +x "$HOME_DIR/booth-kiosk-launch.sh"
 
-# --- 5. GNOME autostart entry ------------------------------------------------
+# clean up the now-unused Epiphany-based helper from earlier iterations
+rm -f "$HOME_DIR/toolbar_cover.py"
+
+# --- 4. GNOME autostart entry ------------------------------------------------
 echo "==> installing autostart entry…"
 install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$HOME_DIR/.config/autostart"
 cat > "$HOME_DIR/.config/autostart/booth-kiosk.desktop" <<EOF
@@ -191,7 +160,7 @@ X-GNOME-Autostart-enabled=true
 EOF
 chown "$KIOSK_USER:$KIOSK_USER" "$HOME_DIR/.config/autostart/booth-kiosk.desktop"
 
-# --- 6. photobooth-kiosk systemd service -------------------------------------
+# --- 5. photobooth-kiosk systemd service -------------------------------------
 echo "==> installing photobooth-kiosk systemd service…"
 cat > /etc/systemd/system/photobooth-kiosk.service <<EOF
 [Unit]
@@ -230,7 +199,7 @@ cat <<EOF
       sudo journalctl -u photobooth-kiosk -f
 
     Camera IP (Zowie sub/main stream): $ZOWIE_CAMERA_IP
-      -- change it: sudo systemctl edit photobooth-kiosk (set ZOWIE_CAMERA_IP)
+      -- change it: ZOWIE_CAMERA_IP=x.x.x.x sudo -E ./scripts/jetson-kiosk-setup.sh
 
     Printer: once the Selphy $PRINTER_NAME is plugged in over USB, register it:
       lpadmin -p $PRINTER_NAME -E -v usb://Canon/SELPHY%20CP1300 \\
