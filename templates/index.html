@@ -143,24 +143,32 @@
       .shutter-btn:active { transform: translateX(-50%) scale(0.93); }
       .shutter-btn:disabled { opacity: 0.4; }
 
-      /* -- bottom flow panel (sign / phone / pay / printing) -- */
+      /* -- flow modal (sign / phone / quantity / confirm / pay / printing) -- */
       .flow-panel {
         position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0));
-        box-sizing: border-box;
-        background: linear-gradient(180deg, rgba(10,10,10,0), rgba(10,10,10,0.96) 30%);
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
         display: none;
-        flex-direction: column;
         align-items: center;
-        gap: 14px;
+        justify-content: center;
         z-index: 6;
       }
       .flow-panel.active { display: flex; }
-      .flow-title { color: #fff; font-size: 1.1rem; font-weight: 600; text-align: center; }
-      .flow-subtitle { color: #aaa; font-size: 0.85rem; text-align: center; margin-top: -8px; }
+      .flow-card {
+        background: #1c1c1e;
+        border-radius: 20px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+        padding: 34px 28px;
+        width: 86vw;
+        max-width: 420px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+      .flow-title { color: #fff; font-size: 1.15rem; font-weight: 600; text-align: center; }
+      .flow-subtitle { color: #999; font-size: 0.85rem; text-align: center; margin-top: -10px; }
 
       .flow-btn-row { display: flex; gap: 12px; width: 100%; max-width: 420px; }
       .flow-btn {
@@ -381,71 +389,83 @@
 
     <!-- Sign the Polaroid -->
     <div class="flow-panel" id="panel-sign">
-      <div class="flow-title">Sign your Polaroid</div>
-      <div class="flow-subtitle">Draw your signature on the photo above</div>
-      <div class="sign-controls">
-        <button class="flow-btn secondary" id="sign-clear">Clear</button>
-        <button class="flow-btn primary" id="sign-done">Done</button>
+      <div class="flow-card">
+        <div class="flow-title">Sign your Polaroid</div>
+        <div class="flow-subtitle">Draw your signature on the photo above</div>
+        <div class="sign-controls">
+          <button class="flow-btn secondary" id="sign-clear">Clear</button>
+          <button class="flow-btn primary" id="sign-done">Done</button>
+        </div>
       </div>
     </div>
 
     <!-- Phone number -->
     <div class="flow-panel" id="panel-phone">
-      <div class="flow-title">To print, please enter your number</div>
-      <div class="flow-subtitle">We'll use this to send you your photo</div>
-      <div class="phone-display" id="phone-display">&nbsp;</div>
-      <div class="keypad" id="phone-keypad">
-        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-        <button data-k="back">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
+      <div class="flow-card">
+        <div class="flow-title">To print, please enter your number</div>
+        <div class="flow-subtitle">We'll use this to send you your photo</div>
+        <div class="phone-display" id="phone-display">&nbsp;</div>
+        <div class="keypad" id="phone-keypad">
+          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+          <button data-k="back">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
+        </div>
+        <button class="flow-btn secondary" id="phone-skip" style="max-width:320px;">Skip</button>
       </div>
-      <button class="flow-btn secondary" id="phone-skip" style="max-width:320px;">Skip</button>
     </div>
 
     <!-- Quantity -->
     <div class="flow-panel" id="panel-quantity">
-      <div class="flow-title">How many copies?</div>
-      <div class="flow-subtitle">Each copy prints on the Polaroid printer</div>
-      <div class="qty-row">
-        <button class="qty-btn" id="qty-minus">&minus;</button>
-        <div class="qty-value" id="qty-value">1</div>
-        <button class="qty-btn" id="qty-plus">&plus;</button>
+      <div class="flow-card">
+        <div class="flow-title">How many copies?</div>
+        <div class="flow-subtitle">Each copy prints on the Polaroid printer</div>
+        <div class="qty-row">
+          <button class="qty-btn" id="qty-minus">&minus;</button>
+          <div class="qty-value" id="qty-value">1</div>
+          <button class="qty-btn" id="qty-plus">&plus;</button>
+        </div>
+        <button class="flow-btn primary" id="qty-next" style="max-width:320px;">Continue</button>
       </div>
-      <button class="flow-btn primary" id="qty-next" style="max-width:320px;">Continue</button>
     </div>
 
     <!-- Confirm -->
     <div class="flow-panel" id="panel-confirm">
-      <div class="flow-title">Confirm your order</div>
-      <div class="confirm-summary" id="confirm-summary"></div>
-      <div class="flow-subtitle">Tap card to pay after confirmation</div>
-      <button class="flow-btn primary" id="confirm-next" style="max-width:320px;">Confirm &amp; Pay</button>
-      <button class="flow-btn secondary" id="confirm-back" style="max-width:320px;">Back</button>
+      <div class="flow-card">
+        <div class="flow-title">Confirm your order</div>
+        <div class="confirm-summary" id="confirm-summary"></div>
+        <div class="flow-subtitle">Tap card to pay after confirmation</div>
+        <button class="flow-btn primary" id="confirm-next" style="max-width:320px;">Confirm &amp; Pay</button>
+        <button class="flow-btn secondary" id="confirm-back" style="max-width:320px;">Back</button>
+      </div>
     </div>
 
     <!-- Payment -->
     <div class="flow-panel" id="panel-pay">
-      <div class="pay-card">
-        <div class="pay-icon pay-pulse">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 9h20M6 15h4"/>
-            <rect x="2" y="5" width="20" height="14" rx="2"/>
-          </svg>
+      <div class="flow-card">
+        <div class="pay-card">
+          <div class="pay-icon pay-pulse">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 9h20M6 15h4"/>
+              <rect x="2" y="5" width="20" height="14" rx="2"/>
+            </svg>
+          </div>
+          <div class="flow-title">Tap to Pay</div>
+          <div class="flow-subtitle">Hold your card near the reader</div>
         </div>
-        <div class="flow-title">Tap to Pay</div>
-        <div class="flow-subtitle">Hold your card near the reader</div>
+        <div class="pay-dev-note" id="pay-dev-note">
+          Stripe Reader M2 not connected yet — using a simulated payment for now.
+        </div>
+        <button class="flow-btn primary" id="pay-simulate" style="max-width:320px;">Simulate Payment (dev)</button>
       </div>
-      <div class="pay-dev-note" id="pay-dev-note">
-        Stripe Reader M2 not connected yet — using a simulated payment for now.
-      </div>
-      <button class="flow-btn primary" id="pay-simulate" style="max-width:320px;">Simulate Payment (dev)</button>
     </div>
 
     <!-- Printing -->
     <div class="flow-panel" id="panel-print">
-      <div class="spinner"></div>
-      <div class="flow-title" id="print-status">Printing your Polaroid&hellip;</div>
+      <div class="flow-card">
+        <div class="spinner"></div>
+        <div class="flow-title" id="print-status">Printing your Polaroid&hellip;</div>
+      </div>
     </div>
 
     <div class="admin-corner" id="admin-corner" aria-label="Admin">
