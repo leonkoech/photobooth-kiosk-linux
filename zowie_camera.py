@@ -99,10 +99,11 @@ class ZowieCamera:
         # being queued.
         cmd = [
             "ffmpeg", "-nostdin", "-loglevel", "error",
-            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-fflags", "nobuffer+genpts", "-flags", "low_delay",
             "-probesize", "32", "-analyzeduration", "0",
+            "-max_delay", "0", "-reorder_queue_size", "0",
             "-rtsp_transport", "tcp", "-i", self.stream_rtsp_url,
-            "-an", "-r", str(self.stream_fps),
+            "-an", "-vsync", "0",
             "-q:v", "5", "-f", "mjpeg", "-",
         ]
         return subprocess.Popen(
