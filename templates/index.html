@@ -24,21 +24,27 @@
         box-sizing: border-box;
       }
 
+      /* Proportions match a real 2.1x3.4in "Mini"/wallet-size Polaroid print
+         (the format the Selphy CP1300 actually outputs via its card-size
+         cassette), not just a stylistic choice — top/left/right border and
+         image window sized off real Instax/Polaroid Mini dimensions
+         (~1.81x2.44in photo inset in a 2.1x3.4in card), so what's on screen
+         previews what actually comes out of the printer. */
       .polaroid {
         background: #fbfaf6;
-        padding: 3vw 3vw 16vw 3vw;
+        padding: 6.9% 6.9% 38.8% 6.9%;
         border-radius: 3px;
         box-shadow:
           0 20px 60px rgba(0, 0, 0, 0.6),
           inset 0 0 0 1px rgba(0, 0, 0, 0.04);
-        width: 90vw;
-        max-width: 900px;
+        width: 78vw;
+        max-width: 480px;
         position: relative;
       }
 
       .photo-window {
         width: 100%;
-        aspect-ratio: 4 / 5;
+        aspect-ratio: 181 / 244;
         background: #000;
         overflow: hidden;
         position: relative;
