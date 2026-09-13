@@ -143,7 +143,7 @@
       .shutter-btn:active { transform: translateX(-50%) scale(0.93); }
       .shutter-btn:disabled { opacity: 0.4; }
 
-      /* -- flow modal (sign / phone / quantity / confirm / pay / printing) -- */
+      /* -- flow modal (sign / pay+quantity / printing+phone) -- */
       .flow-panel {
         position: fixed;
         inset: 0;
@@ -170,15 +170,14 @@
       .flow-title { color: #fff; font-size: 1.15rem; font-weight: 600; text-align: center; }
       .flow-subtitle { color: #999; font-size: 0.85rem; text-align: center; margin-top: -10px; }
 
-      .flow-btn-row { display: flex; gap: 12px; width: 100%; max-width: 420px; }
       .flow-btn {
-        flex: 1;
         padding: 16px;
         border-radius: 12px;
         border: none;
         font-size: 1rem;
         font-weight: 600;
         cursor: pointer;
+        width: 100%;
       }
       .flow-btn.primary { background: #fff; color: #111; }
       .flow-btn.secondary { background: rgba(255,255,255,0.12); color: #fff; }
@@ -186,6 +185,7 @@
 
       /* signature controls */
       .sign-controls { display: flex; gap: 12px; width: 100%; max-width: 420px; }
+      .sign-controls .flow-btn { flex: 1; }
 
       /* phone keypad */
       .phone-display {
@@ -240,15 +240,12 @@
         font-variant-numeric: tabular-nums;
       }
 
-      /* confirm summary */
-      .confirm-summary {
+      .price-total {
         color: #fff;
-        font-size: 1rem;
-        text-align: center;
-        line-height: 1.6;
+        font-size: 2rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
       }
-      .confirm-summary .row { display: flex; justify-content: space-between; gap: 24px; }
-      .confirm-summary .label { color: #999; }
 
       /* payment */
       .pay-card {
@@ -399,50 +396,16 @@
       </div>
     </div>
 
-    <!-- Phone number -->
-    <div class="flow-panel" id="panel-phone">
+    <!-- Quantity + Payment (one screen: pick copies, see total, tap to pay) -->
+    <div class="flow-panel" id="panel-pay">
       <div class="flow-card">
-        <div class="flow-title">To print, please enter your number</div>
-        <div class="flow-subtitle">We'll use this to send you your photo</div>
-        <div class="phone-display" id="phone-display">&nbsp;</div>
-        <div class="keypad" id="phone-keypad">
-          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-          <button data-k="back">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
-        </div>
-        <button class="flow-btn secondary" id="phone-skip" style="max-width:320px;">Skip</button>
-      </div>
-    </div>
-
-    <!-- Quantity -->
-    <div class="flow-panel" id="panel-quantity">
-      <div class="flow-card">
-        <div class="flow-title">How many copies?</div>
-        <div class="flow-subtitle">Each copy prints on the Polaroid printer</div>
+        <div class="flow-title">Get your Polaroid</div>
         <div class="qty-row">
           <button class="qty-btn" id="qty-minus">&minus;</button>
           <div class="qty-value" id="qty-value">1</div>
           <button class="qty-btn" id="qty-plus">&plus;</button>
         </div>
-        <button class="flow-btn primary" id="qty-next" style="max-width:320px;">Continue</button>
-      </div>
-    </div>
-
-    <!-- Confirm -->
-    <div class="flow-panel" id="panel-confirm">
-      <div class="flow-card">
-        <div class="flow-title">Confirm your order</div>
-        <div class="confirm-summary" id="confirm-summary"></div>
-        <div class="flow-subtitle">Tap card to pay after confirmation</div>
-        <button class="flow-btn primary" id="confirm-next" style="max-width:320px;">Confirm &amp; Pay</button>
-        <button class="flow-btn secondary" id="confirm-back" style="max-width:320px;">Back</button>
-      </div>
-    </div>
-
-    <!-- Payment -->
-    <div class="flow-panel" id="panel-pay">
-      <div class="flow-card">
+        <div class="price-total" id="price-total">$4.00</div>
         <div class="pay-card">
           <div class="pay-icon pay-pulse">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -450,8 +413,7 @@
               <rect x="2" y="5" width="20" height="14" rx="2"/>
             </svg>
           </div>
-          <div class="flow-title">Tap to Pay</div>
-          <div class="flow-subtitle">Hold your card near the reader</div>
+          <div class="flow-subtitle">Tap your card to pay</div>
         </div>
         <div class="pay-dev-note" id="pay-dev-note">
           Stripe Reader M2 not connected yet — using a simulated payment for now.
@@ -460,11 +422,22 @@
       </div>
     </div>
 
-    <!-- Printing -->
+    <!-- Printing (phone number collected here, during the dead time while
+         the printer actually runs, instead of as a separate blocking step
+         before payment) -->
     <div class="flow-panel" id="panel-print">
       <div class="flow-card">
         <div class="spinner"></div>
         <div class="flow-title" id="print-status">Printing your Polaroid&hellip;</div>
+        <div class="flow-subtitle">Want a copy sent to your phone?</div>
+        <div class="phone-display" id="phone-display">&nbsp;</div>
+        <div class="keypad" id="phone-keypad">
+          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+          <button data-k="back">&larr;</button><button data-k="0">0</button><button data-k="ok">OK</button>
+        </div>
+        <button class="flow-btn secondary" id="phone-skip" style="max-width:320px;">No thanks</button>
       </div>
     </div>
 
@@ -504,9 +477,6 @@
 
       const panels = {
         sign: document.getElementById('panel-sign'),
-        phone: document.getElementById('panel-phone'),
-        quantity: document.getElementById('panel-quantity'),
-        confirm: document.getElementById('panel-confirm'),
         pay: document.getElementById('panel-pay'),
         print: document.getElementById('panel-print'),
       };
@@ -626,58 +596,24 @@
       document.getElementById('sign-done').addEventListener('click', () => {
         finalImageDataUrl = composeFinalImage();
         signCanvas.style.display = 'none';
-        startPhoneStep();
+        startPayStep();
       });
 
-      // ---------- phone step ----------
-      let phoneDigits = '';
-      const phoneDisplay = document.getElementById('phone-display');
-
-      function renderPhone() {
-        phoneDisplay.textContent = phoneDigits || ' ';
-      }
-
-      function startPhoneStep() {
-        phoneDigits = '';
-        renderPhone();
-        showPanel('phone');
-      }
-
-      document.getElementById('phone-keypad').addEventListener('click', (ev) => {
-        const btn = ev.target.closest('button[data-k]');
-        if (!btn) return;
-        const k = btn.dataset.k;
-        if (k === 'back') phoneDigits = phoneDigits.slice(0, -1);
-        else if (k === 'ok') { submitPhone(); return; }
-        else if (phoneDigits.length < 15) phoneDigits += k;
-        renderPhone();
-      });
-
-      document.getElementById('phone-skip').addEventListener('click', () => startQuantityStep());
-
-      async function submitPhone() {
-        if (phoneDigits) {
-          try {
-            await fetch('/save_phone', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: phoneDigits }),
-            });
-          } catch (e) { console.error('save_phone failed', e); }
-        }
-        startQuantityStep();
-      }
-
-      // ---------- quantity step ----------
+      // ---------- quantity + pay (one screen) ----------
+      const PRICE_PER_COPY = 4.00;
       let quantity = 1;
       const qtyValueEl = document.getElementById('qty-value');
+      const priceTotalEl = document.getElementById('price-total');
 
-      function renderQty() { qtyValueEl.textContent = quantity; }
+      function renderQty() {
+        qtyValueEl.textContent = quantity;
+        priceTotalEl.textContent = '$' + (quantity * PRICE_PER_COPY).toFixed(2);
+      }
 
-      function startQuantityStep() {
+      function startPayStep() {
         quantity = 1;
         renderQty();
-        showPanel('quantity');
+        showPanel('pay');
       }
 
       document.getElementById('qty-minus').addEventListener('click', () => {
@@ -688,27 +624,6 @@
         quantity = Math.min(20, quantity + 1);
         renderQty();
       });
-      document.getElementById('qty-next').addEventListener('click', () => startConfirmStep());
-
-      // ---------- confirm step ----------
-      const confirmSummaryEl = document.getElementById('confirm-summary');
-
-      function startConfirmStep() {
-        const phoneLine = phoneDigits
-          ? `<div class="row"><span class="label">Phone</span><span>${phoneDigits}</span></div>`
-          : `<div class="row"><span class="label">Phone</span><span>skipped</span></div>`;
-        confirmSummaryEl.innerHTML = `
-          ${phoneLine}
-          <div class="row"><span class="label">Copies</span><span>${quantity}</span></div>
-        `;
-        showPanel('confirm');
-      }
-
-      document.getElementById('confirm-back').addEventListener('click', () => startQuantityStep());
-      document.getElementById('confirm-next').addEventListener('click', () => startPaymentStep());
-
-      // ---------- payment step ----------
-      function startPaymentStep() { showPanel('pay'); }
 
       document.getElementById('pay-simulate').addEventListener('click', async () => {
         const btn = document.getElementById('pay-simulate');
@@ -723,23 +638,78 @@
         btn.disabled = false;
       });
 
-      // ---------- print step ----------
+      // ---------- printing + phone (collected during the print wait,
+      // instead of as a separate step before payment) ----------
+      let phoneDigits = '';
+      const phoneDisplay = document.getElementById('phone-display');
+
+      function renderPhone() {
+        phoneDisplay.textContent = phoneDigits || ' ';
+      }
+
+      let phoneResolved = false;
+      function resolvePhoneStep() {
+        if (phoneResolved) return;
+        phoneResolved = true;
+        document.getElementById('phone-keypad').style.visibility = 'hidden';
+        document.getElementById('phone-skip').style.visibility = 'hidden';
+      }
+
+      document.getElementById('phone-keypad').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button[data-k]');
+        if (!btn || phoneResolved) return;
+        const k = btn.dataset.k;
+        if (k === 'back') phoneDigits = phoneDigits.slice(0, -1);
+        else if (k === 'ok') { submitPhone(); return; }
+        else if (phoneDigits.length < 15) phoneDigits += k;
+        renderPhone();
+      });
+
+      document.getElementById('phone-skip').addEventListener('click', () => resolvePhoneStep());
+
+      async function submitPhone() {
+        if (phoneDigits) {
+          try {
+            await fetch('/save_phone', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: phoneDigits }),
+            });
+          } catch (e) { console.error('save_phone failed', e); }
+        }
+        resolvePhoneStep();
+      }
+
       async function startPrintStep() {
+        phoneDigits = '';
+        phoneResolved = false;
+        renderPhone();
+        document.getElementById('phone-keypad').style.visibility = 'visible';
+        document.getElementById('phone-skip').style.visibility = 'visible';
         showPanel('print');
+
         const statusEl = document.getElementById('print-status');
         statusEl.textContent = 'Printing your Polaroid…';
-        try {
-          const res = await fetch('/print', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: finalImageDataUrl, copies: quantity }),
-          });
-          const data = await res.json();
-          statusEl.textContent = data.ok ? 'Enjoy your Polaroid!' : 'Printer not connected yet';
-        } catch (e) {
-          statusEl.textContent = 'Printer not connected yet';
-        }
-        await sleep(4000);
+
+        const printPromise = fetch('/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: finalImageDataUrl, copies: quantity }),
+        }).then(r => r.json()).catch(() => ({ ok: false }));
+
+        // Give the customer a real window to enter their number (or skip)
+        // while the print job runs in the background -- whichever finishes
+        // last decides when we move on.
+        const phoneWait = new Promise(resolve => {
+          const check = setInterval(() => {
+            if (phoneResolved) { clearInterval(check); resolve(); }
+          }, 200);
+          setTimeout(() => { clearInterval(check); resolve(); }, 15000); // don't block forever
+        });
+
+        const [printResult] = await Promise.all([printPromise, phoneWait]);
+        statusEl.textContent = printResult.ok ? 'Enjoy your Polaroid!' : 'Printer not connected yet';
+        await sleep(2000);
         resetToLive();
       }
 
