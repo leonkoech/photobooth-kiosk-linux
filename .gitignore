@@ -1,3 +1,9 @@
 venv
 __pycache__/
 *.pyc
+captures/
+prints/
+phones.jsonl
+saved_tokens.json
+.env*
+*.aws_creds*

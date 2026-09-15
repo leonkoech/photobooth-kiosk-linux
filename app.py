@@ -14,12 +14,18 @@ import ipaddress
 import json
 import os
 import re
+import secrets
 import subprocess
 import time
 
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 from zowie_camera import ZowieCamera
+
+try:
+    import boto3
+except ImportError:  # boto3 not installed yet -- SNS sending just no-ops
+    boto3 = None
 
 # The UI itself lives in the leonkoech/photobooth-kiosk-front repo (a Next.js
 # app built with `output: "export"`) and is deployed here as a static export
@@ -35,6 +41,20 @@ CAMERA_IP = os.environ.get("ZOWIE_CAMERA_IP", "10.1.10.142")
 CAPTURES_DIR = os.path.join(os.path.dirname(__file__), "captures")
 PRINTS_DIR = os.path.join(os.path.dirname(__file__), "prints")
 PHONES_LOG = os.path.join(os.path.dirname(__file__), "phones.jsonl")
+SAVED_TOKENS_PATH = os.path.join(os.path.dirname(__file__), "saved_tokens.json")
+
+# The kiosk's public URL (Cloudflare Tunnel) -- used to build the link texted
+# to customers who save a photo. There's no portal/auth system yet (that's
+# leonkoech/photobooth-kiosk-portal, not built), so this points straight at
+# a simple view/download page served by this same Flask app.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://booth-1.uai.tech")
+
+# AWS SNS for the "text me my photo" link. Uses boto3's normal credential
+# chain (env vars / ~/.aws/credentials / instance role) -- nothing
+# AWS-specific is hardcoded here. If boto3 isn't installed or no credentials
+# are configured, sending just no-ops (logged, not fatal) so the rest of the
+# flow keeps working without AWS set up.
+SNS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
 # CUPS queue name for the Canon Selphy CP1300, once it's plugged in and added
 # via `lpadmin -p Canon_SELPHY_CP1300 -E -v usb://... -m gutenprint.5.3://canon-cp1300/expert`
@@ -78,6 +98,60 @@ def api_key_required(fn):
         _require_api_key()
         return fn(*args, **kwargs)
     return wrapper
+
+
+def _load_saved_tokens() -> dict:
+    if not os.path.exists(SAVED_TOKENS_PATH):
+        return {}
+    with open(SAVED_TOKENS_PATH) as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return {}
+
+
+def _store_saved_token(photo_url: str) -> str:
+    tokens = _load_saved_tokens()
+    token = secrets.token_urlsafe(16)
+    tokens[token] = {"photo_url": photo_url, "ts": time.time()}
+    with open(SAVED_TOKENS_PATH, "w") as f:
+        json.dump(tokens, f)
+    return token
+
+
+def _normalize_phone(raw: str) -> str | None:
+    """Best-effort E.164 formatting for SNS, which requires it. Assumes a US
+    number when no country code is given -- fine for a single-location
+    kiosk, wrong the day this booth travels internationally."""
+    digits = re.sub(r"[^0-9+]", "", raw)
+    if digits.startswith("+"):
+        return digits
+    if len(digits) == 10:
+        return "+1" + digits
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+    return None
+
+
+def _send_saved_photo_sms(phone: str, token: str) -> bool:
+    if boto3 is None:
+        print("[sns] boto3 not installed -- skipping SMS send")
+        return False
+    e164 = _normalize_phone(phone)
+    if not e164:
+        print(f"[sns] could not normalize phone number: {phone!r}")
+        return False
+    link = f"{PUBLIC_BASE_URL}/saved/{token}"
+    try:
+        client = boto3.client("sns", region_name=SNS_REGION)
+        client.publish(
+            PhoneNumber=e164,
+            Message=f"Your Universe Booth photo is ready: {link}",
+        )
+        return True
+    except Exception as e:  # noqa: BLE001 — best-effort, never block the flow
+        print(f"[sns] send failed: {e}")
+        return False
 
 
 def _require_local_request():
@@ -166,13 +240,44 @@ def save_phone():
     phone = re.sub(r"[^0-9+]", "", body.get("phone", ""))
     if not phone:
         return jsonify({"ok": False, "error": "empty phone number"}), 400
-    # No SMS/delivery service is wired up yet (AWS SNS, once that account is
-    # configured) — this just records the number and which photo they
-    # wanted saved, so nothing is lost once sending is wired up.
     photo_url = body.get("photo_url")
+
+    sms_sent = False
+    if photo_url:
+        token = _store_saved_token(photo_url)
+        sms_sent = _send_saved_photo_sms(phone, token)
+
     with open(PHONES_LOG, "a") as f:
-        f.write(json.dumps({"ts": time.time(), "phone": phone, "photo_url": photo_url}) + "\n")
-    return jsonify({"ok": True})
+        f.write(json.dumps({
+            "ts": time.time(), "phone": phone, "photo_url": photo_url, "sms_sent": sms_sent,
+        }) + "\n")
+    return jsonify({"ok": True, "sms_sent": sms_sent})
+
+
+@app.route("/saved/<token>")
+def saved_photo(token):
+    tokens = _load_saved_tokens()
+    entry = tokens.get(token)
+    if not entry:
+        return "This link has expired or doesn't exist.", 404
+    photo_url = entry["photo_url"]
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Universe Booth photo</title>
+<style>
+  body {{ margin:0; background:#0a0a0a; display:flex; flex-direction:column;
+         align-items:center; justify-content:center; min-height:100vh;
+         font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }}
+  img {{ max-width:92vw; max-height:75vh; border-radius:8px;
+         box-shadow:0 20px 60px rgba(0,0,0,0.6); }}
+  a.dl {{ margin-top:20px; padding:14px 28px; border-radius:12px;
+          background:#fff; color:#111; font-weight:600; text-decoration:none; }}
+</style></head>
+<body>
+  <img src="{photo_url}" alt="Your Universe Booth photo">
+  <a class="dl" href="{photo_url}" download>Download</a>
+</body></html>"""
 
 
 @app.route("/payment/charge", methods=["POST"])
