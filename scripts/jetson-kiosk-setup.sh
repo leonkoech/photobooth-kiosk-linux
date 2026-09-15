@@ -47,6 +47,21 @@ if [[ -z "${BOOTH_API_KEY:-}" && -f "$EXISTING_SERVICE" ]]; then
   BOOTH_API_KEY="$(grep -oP 'BOOTH_API_KEY=\K[^"]+' "$EXISTING_SERVICE" || true)"
 fi
 BOOTH_API_KEY="${BOOTH_API_KEY:-$(openssl rand -hex 24)}"
+
+# Optional: AWS credentials for SNS (the "text me my saved photo" link).
+# Pass these on the command line when you run this script -- typed into
+# YOUR OWN terminal on the Nano, never through any assistant/chat -- and
+# they'll persist across re-runs the same way BOOTH_API_KEY does:
+#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1 \
+#     sudo -E ./scripts/jetson-kiosk-setup.sh
+# Leave them unset and SNS sending just no-ops (logged, not fatal).
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -f "$EXISTING_SERVICE" ]]; then
+  AWS_ACCESS_KEY_ID="$(grep -oP 'AWS_ACCESS_KEY_ID=\K[^"]+' "$EXISTING_SERVICE" || true)"
+fi
+if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" && -f "$EXISTING_SERVICE" ]]; then
+  AWS_SECRET_ACCESS_KEY="$(grep -oP 'AWS_SECRET_ACCESS_KEY=\K[^"]+' "$EXISTING_SERVICE" || true)"
+fi
+AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 # ---------------------------------------------------------------------------
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -185,6 +200,9 @@ Environment="ZOWIE_CAMERA_IP=$ZOWIE_CAMERA_IP"
 Environment="BOOTH_PORT=$BOOTH_PORT"
 Environment="PRINTER_NAME=$PRINTER_NAME"
 Environment="BOOTH_API_KEY=$BOOTH_API_KEY"
+Environment="AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}"
+Environment="AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}"
+Environment="AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
 ExecStart=$APP_DIR/venv/bin/python app.py
 Restart=always
 RestartSec=5
@@ -194,6 +212,11 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# This unit now carries a real AWS secret key (unlike BOOTH_API_KEY, which is
+# a deterrent, not a real secret) -- systemd units are world-readable by
+# default, so lock it down to root.
+chmod 600 /etc/systemd/system/photobooth-kiosk.service
 
 systemctl daemon-reload
 systemctl enable photobooth-kiosk.service
@@ -216,6 +239,9 @@ cat <<EOF
       -- this MUST match NEXT_PUBLIC_BOOTH_API_KEY used when building
          photobooth-kiosk-front (see its README), or /capture, /burst,
          /print, /payment/charge and /save_phone will all 401.
+
+    AWS SNS (save-photo SMS link): $( [[ -n "$AWS_ACCESS_KEY_ID" ]] && echo "configured" || echo "NOT configured -- SNS sends will no-op" )
+      -- set/rotate it: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... sudo -E ./scripts/jetson-kiosk-setup.sh
 
     Printer: once the Selphy $PRINTER_NAME is plugged in over USB, register it:
       lpadmin -p $PRINTER_NAME -E -v usb://Canon/SELPHY%20CP1300 \\
