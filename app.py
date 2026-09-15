@@ -8,6 +8,8 @@ output at boot.
 from __future__ import annotations
 
 import base64
+import functools
+import hmac
 import ipaddress
 import json
 import os
@@ -45,10 +47,37 @@ KIOSK_XAUTHORITY = os.environ.get(
     "KIOSK_XAUTHORITY", "/run/user/1000/gdm/Xauthority"
 )
 
+# Shared secret the frontend sends on every camera/print/payment call. This
+# is baked into the frontend's static JS bundle at build time (see
+# photobooth-kiosk-front's lib/api.ts) -- since that bundle is served
+# publicly over the Cloudflare Tunnel, anyone who views-source can read it.
+# It's a deterrent against bots/scripts hitting these endpoints cold, NOT a
+# real secret. The actual protection for anything that costs money or
+# consumes paper (/capture, /burst, /print, /payment/charge) is the
+# tunnel-level ingress exclusion below -- same technique already used for
+# /admin/* -- which makes these routes unreachable from the public internet
+# at all, regardless of the key. Set a real BOOTH_API_KEY via the systemd
+# unit; this default is only for local dev.
+BOOTH_API_KEY = os.environ.get("BOOTH_API_KEY", "dev-only-change-me")
+
 camera = ZowieCamera(ip=CAMERA_IP)
 
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 os.makedirs(PRINTS_DIR, exist_ok=True)
+
+
+def _require_api_key():
+    key = request.headers.get("X-Booth-Key", "")
+    if not hmac.compare_digest(key, BOOTH_API_KEY):
+        abort(401)
+
+
+def api_key_required(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        _require_api_key()
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 def _require_local_request():
@@ -101,6 +130,7 @@ def stream():
 
 
 @app.route("/capture", methods=["POST"])
+@api_key_required
 def capture():
     filename = f"shot_{int(time.time() * 1000)}.jpg"
     out_path = os.path.join(CAPTURES_DIR, filename)
@@ -110,25 +140,43 @@ def capture():
     return jsonify({"ok": True, "url": f"/captures/{filename}"})
 
 
+@app.route("/burst", methods=["POST"])
+@api_key_required
+def burst():
+    # The classic photobooth shape: 4 shots a beat apart, customer picks
+    # which to print and (optionally) which to save/send later.
+    session = f"burst_{int(time.time() * 1000)}"
+    out_dir = os.path.join(CAPTURES_DIR, session)
+    paths = camera.burst(out_dir, count=4, interval=0.8, prefix="shot")
+    if not paths:
+        return jsonify({"ok": False, "error": "camera burst failed"}), 502
+    urls = [f"/captures/{session}/{os.path.basename(p)}" for p in paths]
+    return jsonify({"ok": True, "urls": urls})
+
+
 @app.route("/captures/<path:filename>")
 def captures(filename):
     return send_from_directory(CAPTURES_DIR, filename)
 
 
 @app.route("/save_phone", methods=["POST"])
+@api_key_required
 def save_phone():
     body = request.get_json(silent=True) or {}
     phone = re.sub(r"[^0-9+]", "", body.get("phone", ""))
     if not phone:
         return jsonify({"ok": False, "error": "empty phone number"}), 400
-    # No SMS/delivery service is wired up yet — this just records the number
-    # against the session so it's not lost once that exists.
+    # No SMS/delivery service is wired up yet (AWS SNS, once that account is
+    # configured) — this just records the number and which photo they
+    # wanted saved, so nothing is lost once sending is wired up.
+    photo_url = body.get("photo_url")
     with open(PHONES_LOG, "a") as f:
-        f.write(json.dumps({"ts": time.time(), "phone": phone}) + "\n")
+        f.write(json.dumps({"ts": time.time(), "phone": phone, "photo_url": photo_url}) + "\n")
     return jsonify({"ok": True})
 
 
 @app.route("/payment/charge", methods=["POST"])
+@api_key_required
 def payment_charge():
     # PLACEHOLDER — the Stripe Reader M2 hasn't arrived yet. Once it has,
     # this needs: a backend endpoint that creates a Stripe Terminal
@@ -141,6 +189,7 @@ def payment_charge():
 
 
 @app.route("/print", methods=["POST"])
+@api_key_required
 def print_photo():
     body = request.get_json(silent=True) or {}
     data_url = body.get("image", "")

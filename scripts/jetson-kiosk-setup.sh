@@ -37,6 +37,16 @@ if [[ -z "${ZOWIE_CAMERA_IP:-}" && -f "$EXISTING_SERVICE" ]]; then
   ZOWIE_CAMERA_IP="$(grep -oP 'ZOWIE_CAMERA_IP=\K[0-9.]+' "$EXISTING_SERVICE" || true)"
 fi
 ZOWIE_CAMERA_IP="${ZOWIE_CAMERA_IP:-10.1.10.142}"
+
+# BOOTH_API_KEY is checked on /capture, /burst, /print, /payment/charge,
+# /save_phone -- see app.py's api_key_required for what this actually does
+# and doesn't protect against. Preserve whatever's already deployed (it must
+# match the value baked into the frontend build) rather than silently
+# rotating it on every re-run of this script.
+if [[ -z "${BOOTH_API_KEY:-}" && -f "$EXISTING_SERVICE" ]]; then
+  BOOTH_API_KEY="$(grep -oP 'BOOTH_API_KEY=\K[^"]+' "$EXISTING_SERVICE" || true)"
+fi
+BOOTH_API_KEY="${BOOTH_API_KEY:-$(openssl rand -hex 24)}"
 # ---------------------------------------------------------------------------
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -174,6 +184,7 @@ WorkingDirectory=$APP_DIR
 Environment="ZOWIE_CAMERA_IP=$ZOWIE_CAMERA_IP"
 Environment="BOOTH_PORT=$BOOTH_PORT"
 Environment="PRINTER_NAME=$PRINTER_NAME"
+Environment="BOOTH_API_KEY=$BOOTH_API_KEY"
 ExecStart=$APP_DIR/venv/bin/python app.py
 Restart=always
 RestartSec=5
@@ -200,6 +211,11 @@ cat <<EOF
 
     Camera IP (Zowie sub/main stream): $ZOWIE_CAMERA_IP
       -- change it: ZOWIE_CAMERA_IP=x.x.x.x sudo -E ./scripts/jetson-kiosk-setup.sh
+
+    BOOTH_API_KEY: $BOOTH_API_KEY
+      -- this MUST match NEXT_PUBLIC_BOOTH_API_KEY used when building
+         photobooth-kiosk-front (see its README), or /capture, /burst,
+         /print, /payment/charge and /save_phone will all 401.
 
     Printer: once the Selphy $PRINTER_NAME is plugged in over USB, register it:
       lpadmin -p $PRINTER_NAME -E -v usb://Canon/SELPHY%20CP1300 \\
